@@ -3,6 +3,8 @@ local th = terralib.includec("/mnt/raid/torch/install/include/TH/TH.h")
 
 funMap = {}
 
+--Comment
+
 --funMap[torch.add] = function(a,b,c)
 --  cast_a = terralib.cast(&&th.THDoubleTensor,a)
 --  cast_b = terralib.cast(&&th.THDoubleTensor,b)
