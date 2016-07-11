@@ -16,13 +16,13 @@ assert(terralib.loadfile("funMap.t"))()
 
 local doneFuns = {}
 
-runN = 2
+runN = 0
 
 --util.typeAsInPlace
 --torch.DoubleTensor.expandAs
 doneFuns["torch.pow"] = true
 --torch.t
-doneFuns["torch.max"] = true
+--doneFuns["torch.max"] = true
 doneFuns["torch.log"] = true
 doneFuns["torch.exp"] = true
 --util.fillInPlace
@@ -36,10 +36,6 @@ doneFuns["torch.cmul"] = true
 
 local funMap = {}
 
-local TensorTypeMap = {}
-TensorTypeMap["torch.DoubleTensor"] = "DoubleTensor"
-TensorTypeMap["torch.ByteTensor"] = "ByteTensor"
-
 function torchWrap(name,fun)
   
   return function(...) 
@@ -52,7 +48,7 @@ function torchWrap(name,fun)
       for _,arg in ipairs(args) do
         local typeStr = ""
         if(torch.isTensor(arg)) then
-          typeStr = TensorTypeMap[arg:type()]
+          typeStr = arg:type()
         elseif(type(arg)=="number") then
           typeStr = "number"
         else 

@@ -1,13 +1,13 @@
-local cwrapFun = {}
+local cArgsList = {}
 
 
-
-function cwrapFun:checkCwrap(cwrap)
-  for op, v in pairs(cwrap) do
+function cArgsList:checkCArgs()
+  for op, v in pairs(cArgsList.list) do
     assert(#v % 2 == 0)
     for i,args in ipairs(v) do
       assert((i%2==1 and type(args)=="string") or (i%2==0 and type(args)=="table"))
     end
+    --TODO
     --Verify that creturned is always the last arg if it is there
     --for i=1,#v/2 do
     --  for ci,t in ipairs
@@ -16,34 +16,36 @@ function cwrapFun:checkCwrap(cwrap)
 end
 
 
-function cwrapFun:init(Tensor)
+local reals = {ByteTensor='unsigned char',
+             CharTensor='char',
+             ShortTensor='short',
+             IntTensor='int',
+             LongTensor='long',
+             FloatTensor='float',
+             DoubleTensor='double'}
+
+local accreals = {ByteTensor='long',
+             CharTensor='long',
+             ShortTensor='long',
+             IntTensor='long',
+             LongTensor='long',
+             FloatTensor='double',
+             DoubleTensor='double'}
+
+
+
+function cArgsList:init(Tensor)
+  
+  list = {}
+  TensorShort = Tensor:match("torch.(%S+)")
   local function cname(name)
-    return string.format('TH%s_%s', Tensor,name)
+    return string.format('TH%s_%s', TensorShort,name)
   end
-  local cwrap = {} 
+  local real = reals[TensorShort]
+  local accreal = accreals[TensorShort]
   
   
-  local reals = {ByteTensor='unsigned char',
-               CharTensor='char',
-               ShortTensor='short',
-               IntTensor='int',
-               LongTensor='long',
-               FloatTensor='float',
-               DoubleTensor='double'}
-
-  local accreals = {ByteTensor='long',
-               CharTensor='long',
-               ShortTensor='long',
-               IntTensor='long',
-               LongTensor='long',
-               FloatTensor='double',
-               DoubleTensor='double'}
-
-  local real = reals[Tensor]
-  local accreal = accreals[Tensor]
-  
-  
-  cwrap[torch.add] = {
+  list[torch.add] = {
           cname("add"),
           {{name=Tensor, default=true, returned=true, method={default='nil'}},
            {name=Tensor, method={default=1}},
@@ -53,28 +55,28 @@ function cwrapFun:init(Tensor)
            {name=Tensor, method={default=1}},
            {name=real, default=1},
            {name=Tensor}}}
-  cwrap[torch.neg] = {
+  list[torch.neg] = {
        cname("neg"),
        {{name=Tensor, default=true, returned=true, method={default='nil'}},
         {name=Tensor, method={default=1}}}}
-  cwrap[torch.log] = {
+  list[torch.log] = {
        cname("log"),
        {{name=Tensor, default=true, returned=true, method={default='nil'}},
         {name=Tensor, method={default=1}}},
        "log",
        {{name=real},
         {name=real, creturned=true}}}
-  cwrap[torch.cdiv] = {
+  list[torch.cdiv] = {
         cname("cdiv"),
         {{name=Tensor, default=true, returned=true, method={default='nil'}},
          {name=Tensor, method={default=1}},
          {name=Tensor}}}
-  cwrap[torch.cmul] = {
+  list[torch.cmul] = {
         cname("cmul"),
         {{name=Tensor, default=true, returned=true, method={default='nil'}},
          {name=Tensor, method={default=1}},
          {name=Tensor}}}
-  cwrap[torch.pow] = {
+  list[torch.pow] = {
          cname("pow"),
          {{name=Tensor, default=true, returned=true, method={default='nil'}},
           {name=Tensor, method={default=1}},
@@ -87,7 +89,7 @@ function cwrapFun:init(Tensor)
          {{name=real},
           {name=real},
           {name=real, creturned=true}}}
-  cwrap[torch.exp] = {
+  list[torch.exp] = {
         cname("exp"),
         {{name=Tensor, default=true, returned=true, method={default='nil'}},
          {name=Tensor, method={default=1}}},
@@ -95,7 +97,7 @@ function cwrapFun:init(Tensor)
         {{name=real},
          {name=real, creturned=true}}}
   local name = "eq"
-  cwrap[torch.eq] = {
+  list[torch.eq] = {
          cname(name .. 'Value'),
          {{name='ByteTensor',default=true, returned=true},
           {name=Tensor},
@@ -113,7 +115,7 @@ function cwrapFun:init(Tensor)
           {name=Tensor},
           {name=Tensor}}}
   name = nil
-  cwrap[torch.sum] = {
+  list[torch.sum] = {
           cname("sumall"),
           {{name=Tensor},
            {name=accreal, creturned=true}},
@@ -123,7 +125,7 @@ function cwrapFun:init(Tensor)
            {name="index"}} }
   
   name = "max"
-  cwrap[torch.max] = {
+  list[torch.max] = {
            cname(name .. "all"),
            {{name=Tensor},
             {name=real, creturned=true}},
@@ -133,7 +135,14 @@ function cwrapFun:init(Tensor)
             {name=Tensor},
             {name="index"}} }
   name = nil
-  return cwrap
+  cArgsList.list = list
+  
+  --return cArgsList
 end
 
-return cwrapFun
+local DoubleTensorStr="torch.DoubleTensor"
+
+cArgsList:init(DoubleTensorStr)
+cArgsList:checkCArgs()
+
+return cArgsList
