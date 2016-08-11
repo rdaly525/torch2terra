@@ -12,17 +12,16 @@ package.cpath = package.cpath .. ";/home/zdevito/terra/release/lib/?.so"
 
 require 'terra'
 
-assert(terralib.loadfile("funMap.t"))()
-
-local doneFuns = {}
-
 runN = 0
 
---util.typeAsInPlace
---torch.DoubleTensor.expandAs
+assert(terralib.loadfile("funMap.t"))()
+local doneFuns = {}
+
+--doneFuns["util.typeAsInPlace"] = true
+--doneFuns["torch.DoubleTensor.expandAs"] = true
 doneFuns["torch.pow"] = true
---torch.t
---doneFuns["torch.max"] = true
+--doneFuns["torch.t"] = true
+doneFuns["torch.max"] = true
 doneFuns["torch.log"] = true
 doneFuns["torch.exp"] = true
 --util.fillInPlace
@@ -31,33 +30,37 @@ doneFuns["torch.sum"] = true
 doneFuns["torch.eq"] = true
 doneFuns["torch.cdiv"] = true
 doneFuns["torch.add"] = true
---torch.mm
+doneFuns["torch.mm"] = true
 doneFuns["torch.cmul"] = true
 
 local funMap = {}
 
 function torchWrap(name,fun)
+  --if(name=="torch.t") then
+  --  fun = "torch.t"
+  --end
+  --if(name=="util.typeAsInPlace") then
+  --  fun = "util.typeAsInPlace"
+  --end
   
   return function(...) 
-    --print(name)
     if doneFuns[name] then
       --print("DoneFun",name)
       local args = {...}
       local argTypes = {}
       local argTypeStr = ""
-      for _,arg in ipairs(args) do
+      for i,arg in ipairs(args) do
         local typeStr = ""
         if(torch.isTensor(arg)) then
           typeStr = arg:type()
         elseif(type(arg)=="number") then
           typeStr = "number"
         else 
-          assert(false,"Bad type! "..type(arg))
+          assert(false,"Bad type! arg"..i..": "..torch.type(arg))
         end
         table.insert(argTypes,typeStr)
         argTypeStr = argTypeStr .. typeStr
       end
-      --print(name,argTypeStr)
       if funMap[fun] == nil then
         funMap[fun] = {}
       end
@@ -73,6 +76,7 @@ function torchWrap(name,fun)
   end
 
 end
+
 
 grad = require 'autograd'
 
@@ -178,5 +182,4 @@ if(trainMnist) then
   end
   print(numCorrect/testData.size())
 end
-
 

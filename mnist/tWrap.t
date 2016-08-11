@@ -1,31 +1,30 @@
 local th = terralib.includec("/mnt/raid/torch/install/include/TH/TH.h")
-local types = assert(terralib.loadfile("types.t"))()
-
+local types, cArg = assert(terralib.loadfile("types.t"))()
 tWrap = {}
 
-function tWrap.new(cName,cArgsListTab,cArgsListMap)
-  local self = {cName=cName,cArgsTab=cArgsListTab,cArgsMap=cArgsListMap}
+function tWrap.new(cFun,cArgsListTab,cArgsListMap)
+  local self = {cFun=cFun,cArgsTab=cArgsListTab,cArgsMap=cArgsListMap}
   setmetatable(self, {__index=tWrap})
-  return self
-end
-
-function tWrap:tWrapFun()
   
+  --cFun is the c function name
+  --cArgs is an array of cArg objects
+  --argMap is map between C arg list and passed in lua args
+  --returnMap is a table with 1 containg first return Cvalue idx, 2 second return Cvalue idx and so on
+  
+ 
   --create tArgTypes
   local tArgTypes = {}
   for _,idx in ipairs(self.cArgsMap) do
     table.insert(tArgTypes,self.cArgsTab[idx].name)
   end
-
-  --create cArgTypes
-  local cArgTypes = {}
-  for _,tab in ipairs(self.cArgsTab) do
-    if not tab.creturned then
-      table.insert(cArgTypes,tab.name)
-    end
+ 
+  --create tArgSymbols
+  local tArgSymbols = {}
+  for i,tArgType in ipairs(tArgTypes) do
+    table.insert(tArgSymbols,symbol(types.getType(tArgType),"tArg"..i))
   end
-  
-  --create argMap
+ 
+   --create argMap
   local argMap = {}
   local argIdx = 1
   for i=1,#self.cArgsTab do
@@ -34,138 +33,107 @@ function tWrap:tWrapFun()
       argIdx = argIdx+1
     end
   end
+ 
+  --create cArgs
+  local cArgs = {}
+  local cRet = nil
+  for i,tab in ipairs(self.cArgsTab) do
+    if i==#self.cArgsTab and tab.creturned then
+      cRet = cArg.new(i,argMap[i],tab)
+    else
+      table.insert(cArgs,cArg.new(i,argMap[i],tab))
+    end
+  end
+  --let each cArg have access to the array of cArgs
+  for i,cArg in ipairs(cArgs) do
+    cArg.cArgs = cArgs
+  end
 
   --create returnMap
   local returnMap = {}
-  local cRet = {}
   for i,t in ipairs(self.cArgsTab) do
     if(t.creturned) then
       assert(next(returnMap)==nil,"ERROR: both creturned and return")
-      cRet.i,cRet.type = i, types.torchTypes[t.name]
     end
     if(t.returned) then
-      assert(cRet.i==nil)
       table.insert(returnMap,i)
     end
   end
+  
+  local cArgSymbols = {}
+  local cArgTypes = {}
+  for i,cArg in ipairs(cArgs) do
+    table.insert(cArgSymbols,cArg.symbol)
+    table.insert(cArgTypes,types.getType(cArg.name))
+  end
 
+  self.tArgTypes = tArgTypes
+  self.tArgSymbols = tArgSymbols
+  self.argMap = argMap
+  self.cArgs = cArgs
+  self.returnMap = returnMap
+  self.cRet = cRet
+  self.cArgSymbols = cArgSymbols
+  self.cArgTypes = cArgTypes
   --print("tArgTypes",tArgTypes)
   --print("self.cArgsMap",self.cArgsMap)
-  --print("cName",self.cName)
+  --print("cFun",self.cFun)
   --print("cArgTypes",cArgTypes)
   --print("argMap",argMap)
   --print("returnMap",returnMap)
+
+  return self
+end
+
+function tWrap:tWrapFun()
   
-  --cName is the c function name
-  --cArgTypes is an array of the types of the c function
-  --argMap is map between C arg list and passed in lua args
-  --returnMap is a table with 1 containg first return Cvalue idx, 2 second return Cvalue idx and so on
   
-  --local function createTerraFun(cName,cArgTypes,argMap,returnMap)
-  local function createTerraFun()
-    
-    local function getType(typeStr)
-      if types.torchTypes[typeStr]==nil then
-        assert(false,"ERROR: bad argType! "..typeStr)
-      end
-      return types.torchTypes[typeStr]
-    end
-    
-    local terraArgs = {}
-    for i,tArgType in ipairs(tArgTypes) do
-      table.insert(terraArgs,symbol(getType(tArgType),"arg"..i))
-    end
-
-    local cArgTable = {}
-    local cArgRealTypes = {}
-    for i,argType in ipairs(cArgTypes) do
-      table.insert(cArgTable,symbol(getType(argType),"cArg"..i))
-      table.insert(cArgRealTypes,getType(argType))
-    end
-
-    --TODO what is the actual default value??
-    local function precallGen()
-      local function getValue(i)
-        if argMap[i]==nil then
-          if cArgTypes[i]==types.DoubleTensorStr then
-            return `th.THDoubleTensor_new()
-          elseif cArgTypes[i]==types.ByteTensorStr then
-            return `th.THByteTensor_new()
-          else
-            return `1
-          end
-        else
-          if cArgTypes[i]=="index" then
-            return `[terraArgs[argMap[i]]] - 1
-          else
-            return terraArgs[argMap[i]]
-          end
-        end
-      end
-      local precallTable = {}
-      for i,cArgSym in ipairs(cArgTable) do
-        precallTable[i] = quote 
-          var [cArgSym] = [getValue(i)]
-        end
-      end
-      return precallTable
-    end
-
-    local cRetType = {}
-    if cRet.type then
-      cRetType = {cRet.type}
-    end
-    
-    local cCall = terralib.externfunction(self.cName,cArgRealTypes->cRetType)
-    
-    local function cCallGen()
-      if cRet.i then
-        cRet.sym = symbol(cRet.type,"cArg"..(cRet.i))
-        return quote
-          var [cRet.sym] = cCall([cArgTable])
-        end
-      else
-        return `cCall([cArgTable])
-      end
-    end
-    
-    local function returnGen()
-      if cRet.sym then
-        return cRet.sym
-      end
-      local returnList = {}
-      for i,argNum in ipairs(returnMap) do
-        table.insert(returnList,cArgTable[argNum])
-      end
-      return returnList
-    end
-    
-
-    return terra ([terraArgs])
-      [precallGen()]
-      [cCallGen()]
-      return [returnGen()]
-    end
+  local cRet = self.cRet
+  local cRetType = {}
+  if cRet then
+    cRetType = {types.getType(cRet.name)}
   end
   
-  self.returnCmd = {}
-  if cRet.i then
-    table.insert(self.returnCmd,{1,1})
+  local cCall
+  if(type(self.cFun)=="string") then
+    cCall = terralib.externfunction(self.cFun,self.cArgTypes->cRetType)
   else
-    for i,retIdx in pairs(returnMap) do
-      if argMap[retIdx] then --Return value is arg passed in
-        table.insert(self.returnCmd,{3,argMap[retIdx]})
-      else
-        table.insert(self.returnCmd,{2,i,cArgTypes[retIdx]})
+    cCall = self.cFun
+  end
+
+  local function cCallGen()
+    if cRet then
+      return quote
+        var [cRet.symbol] = cCall([self.cArgSymbols])
       end
+    else
+      return `cCall([self.cArgSymbols])
     end
   end
-  
-  --TODO hacky
-  self.tArgTypes = tArgTypes
+ 
+  local function returnGen()
+    if cRet then
+      return cRet.symbol
+    end
+    local returnList = {}
+    for i,argNum in ipairs(self.returnMap) do
+      table.insert(returnList,self.cArgSymbols[argNum])
+    end
+    return returnList
+  end
 
-  local terraFun = createTerraFun()
-  return terraFun
+  return terra ([self.tArgSymbols])
+    escape 
+      for i,cArg in ipairs(self.cArgs) do
+        emit quote [cArg:init(self.tArgSymbols)] end
+      end
+      for i,cArg in ipairs(self.cArgs) do
+        emit quote [cArg:precall()] end
+      end
+    end
+    [cCallGen()]
+    return [returnGen()]
+  end
 
 end
 
@@ -176,7 +144,24 @@ function tWrap:getReturnCmd()
   --cmd : 1 cRet. just return terraRets[idx=1]
   --      2 new object. Wrap and return terraRets[idx]
   --      3 orig arg.   just return args[idx]
-  return self.returnCmd
+  returnCmd = {}
+  if self.cRet then
+    if(types.tensorTypes[self.cRet.name]) then
+        table.insert(returnCmd,{2,1,self.cRet.name})
+    else
+      table.insert(returnCmd,{1,1})
+    end
+  else
+    for i,retIdx in pairs(self.returnMap) do
+      if self.argMap[retIdx] then --Return value is arg passed in
+        table.insert(returnCmd,{3,self.argMap[retIdx]})
+      else
+        table.insert(returnCmd,{2,i,self.cArgs[retIdx].name})
+      end
+    end
+  end
+  return returnCmd
+  
 end
 
 return tWrap

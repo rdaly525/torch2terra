@@ -1,3 +1,6 @@
+local types, _ = assert(terralib.loadfile("types.t"))()
+
+
 local cArgsList = {}
 
 
@@ -5,7 +8,7 @@ function cArgsList:checkCArgs()
   for op, v in pairs(cArgsList.list) do
     assert(#v % 2 == 0)
     for i,args in ipairs(v) do
-      assert((i%2==1 and type(args)=="string") or (i%2==0 and type(args)=="table"))
+      assert((i%2==1 and (type(args)=="string" or terralib.type(args)=="terrafunction")) or (i%2==0 and type(args)=="table"),"BAD "..i.." "..type(args))
     end
     --TODO
     --Verify that creturned is always the last arg if it is there
@@ -34,17 +37,20 @@ local accreals = {ByteTensor='long',
 
 
 
-function cArgsList:init(Tensor)
+function cArgsList:create(Tensor)
   
-  list = {}
-  TensorShort = Tensor:match("torch.(%S+)")
+  local list = {}
+  local TensorShort = Tensor:match("torch.(%S+)")
+  local TensorShortShort = TensorShort:match("(%S+)Tensor")
   local function cname(name)
     return string.format('TH%s_%s', TensorShort,name)
   end
   local real = reals[TensorShort]
   local accreal = accreals[TensorShort]
   
-  
+  local tType = types.torchTypes[Tensor]
+  local tBType = types.torchTypes["torch.ByteTensor"] 
+
   list[torch.add] = {
           cname("add"),
           {{name=Tensor, default=true, returned=true, method={default='nil'}},
@@ -99,7 +105,7 @@ function cArgsList:init(Tensor)
   local name = "eq"
   list[torch.eq] = {
          cname(name .. 'Value'),
-         {{name='ByteTensor',default=true, returned=true},
+         {{name='torch.ByteTensor',default=true, returned=true},
           {name=Tensor},
           {name=real}},
          cname(name .. 'ValueT'),
@@ -107,7 +113,7 @@ function cArgsList:init(Tensor)
           {name=Tensor},
           {name=real}},
          cname(name .. 'Tensor'),
-         {{name='ByteTensor',default=true, returned=true},
+         {{name='torch.ByteTensor',default=true, returned=true},
           {name=Tensor},
           {name=Tensor}},
          cname(name .. 'TensorT'),
@@ -131,9 +137,79 @@ function cArgsList:init(Tensor)
             {name=real, creturned=true}},
            cname(name),
            {{name=Tensor, default=true, returned=true},
-            {name="IndexTensor", default=true, returned=true, noreadadd=true},
+            {name="torch.LongTensor", default=true, returned=true, noreadadd=true},
             {name=Tensor},
             {name="index"}} }
+    list[torch.mm] = {
+      cname("addmm"),
+      {
+        {name=Tensor, default=true, returned=true, method={default='nil'},
+          precall=function(self)
+            print("ROSS:in precall")
+            local resize2dFun = terralib.externfunction("TH"..TensorShort.."_resize2d"      ,{tType,int32,int32}->{})
+            
+            local zeroFun = terralib.externfunction("TH"..TensorShort.."_zero",{tType}->{})
+            return quote
+              resize2dFun([self.symbol],[self.cArgs[5].symbol].size[0],[self.cArgs[6].symbol].size[1])
+              zeroFun([self.symbol])
+            end
+          end
+        },
+        {name=real, default=0, invisible=true},
+        {name=Tensor, default=1, invisible=true},
+        {name=real, default=1, invisible=true},
+        {name=Tensor, dim=2},
+        {name=Tensor, dim=2} 
+      }
+    }
+    --torch.t is not yet defined because it is called in support.lua
+    --So I just map the function name to the function string
+    list["torch.t"] = {
+      cname("transpose"),
+      {
+        {name=Tensor,returned=true, dim=2},
+        {name=Tensor, default=1,dim=2, defaultGen=function(self) return `nil end},
+        {name='index', default=1, invisible=true},
+        {name='index', default=2, invisible=true}
+      }
+    }
+    local newWithTensorFun = terralib.externfunction(cname("newWithTensor"),{tType}->{tType})
+    terra terra_expandAs(tArg1 : tType, tArg2 : tType) : tType
+      var res = newWithTensorFun(tArg1)
+      if(tArg1.size[0]==1) then
+        res.size[0] = tArg2.size[0]
+        res.stride[0] = 0
+      end
+      if(tArg1.size[1]==1) then
+        res.size[1] = tArg2.size[1]
+        res.stride[1] = 0
+      end
+      return res
+    end
+    list[torch.DoubleTensor.expandAs] = {
+      terra_expandAs,
+      {
+        {name=Tensor,dim=2},
+        {name=Tensor,dim=2},
+        {name=Tensor,creturned=true}
+      }
+    }
+    --TODO hacky hardcoding "torch.ByteTensor" as second tensor type
+    local copyFun = terralib.externfunction(cname("copy"..TensorShortShort),{tType,tBType}->{})
+    terra terra_util_typeAsInPlace(tArg1 : tType, tArg2 : tBType, tArg3 : tType) : tType
+      copyFun(tArg1,tArg2)
+      return tArg1
+    end
+      
+    list["util.typeAsInPlace"] = {
+      terra_util_typeAsInPlace,
+      {
+        {name=Tensor},
+        {name="torch.ByteTensor"},
+        {name=Tensor},
+        {name=Tensor,creturned=true}
+      }
+    }
   name = nil
   cArgsList.list = list
   
@@ -142,7 +218,7 @@ end
 
 local DoubleTensorStr="torch.DoubleTensor"
 
-cArgsList:init(DoubleTensorStr)
+cArgsList:create(DoubleTensorStr)
 cArgsList:checkCArgs()
 
 return cArgsList

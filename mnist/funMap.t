@@ -25,18 +25,43 @@ function createFun(op,argTypes)
         return false
       end
     end
-    
-    --TODO
+        
+    --fun(tI,argI)
+
+    --tI < #t
+    --tI == #t
+    --argI > #argTypes
+    --default
+    --creturned
+    --sameType()
+
+    --TODO Simplify this
     --Does not handle the case when it fits but there are more necessary args at the end of the table
     local function recCheckFit(argI,tI)
       if(argI > #argTypes) then
-        return true, {}
+        if(tI > #t) then
+          return true, {}
+        elseif(tI==#t) then
+          if(t[tI].default or t[tI].creturned) then
+            return true, {}
+          else
+            return false, nil
+          end
+        else -- tI<#t 
+          if (t[tI].default) then
+            return recCheckFit(argI,tI+1)
+          else
+            return false, nil
+          end
+        end
       elseif(tI > #t) then 
         return false, nil
       end
+ 
       if(t[tI].creturned) then
         return recCheckFit(argI,tI+1)
       end
+      
       if(sameType(argTypes[argI],t[tI])) then
         local boolRet, tab = recCheckFit(argI+1,tI+1) 
         if boolRet then
@@ -44,6 +69,7 @@ function createFun(op,argTypes)
           return true, tab
         end
       end
+      
       if(t[tI].default) then
         return recCheckFit(argI,tI+1)
       else
@@ -60,25 +86,25 @@ function createFun(op,argTypes)
   end
 
   local cArgsListOp = cArgsList.list[op]
-  local cName, cArgsListMap, cArgsListTab = nil,nil,nil
+  local cFun, cArgsListMap, cArgsListTab = nil,nil,nil
   for i = 1,#cArgsListOp/2 do
     cArgsListTab = cArgsListOp[2*i]
     local isFit, tab = checkFit(cArgsListTab)
     if isFit then
-      cName = cArgsListOp[2*i-1]
+      cFun = cArgsListOp[2*i-1]
       cArgsListMap = tab
       reverseTable(cArgsListMap)
       break
     end
   end
-  assert(cName,"ERROR: pattern not found for",op,argTypes)
-
-  local wrap = tWrap.new(cName,cArgsListTab,cArgsListMap)
+  assert(cFun,"ERROR: pattern not found for",op,argTypes)
+  print("FOUND",cFun)
+  local wrap = tWrap.new(cFun,cArgsListTab,cArgsListMap)
 
   local terraFun = wrap:tWrapFun()
   
   local returnCmd = wrap:getReturnCmd()
-  
+
   terraFun:printpretty()
 
   return function(...)
