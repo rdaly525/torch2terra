@@ -17,14 +17,14 @@ runN = 0
 assert(terralib.loadfile("funMap.t"))()
 local doneFuns = {}
 
---doneFuns["util.typeAsInPlace"] = true
---doneFuns["torch.DoubleTensor.expandAs"] = true
+doneFuns["util.typeAsInPlace"] = true
+doneFuns["torch.DoubleTensor.expandAs"] = true
 doneFuns["torch.pow"] = true
---doneFuns["torch.t"] = true
+doneFuns["torch.t"] = true
 doneFuns["torch.max"] = true
 doneFuns["torch.log"] = true
 doneFuns["torch.exp"] = true
---util.fillInPlace
+doneFuns["util.fillInPlace"] = true
 doneFuns["torch.neg"] = true
 doneFuns["torch.sum"] = true
 doneFuns["torch.eq"] = true
@@ -36,12 +36,15 @@ doneFuns["torch.cmul"] = true
 local funMap = {}
 
 function torchWrap(name,fun)
-  --if(name=="torch.t") then
-  --  fun = "torch.t"
-  --end
-  --if(name=="util.typeAsInPlace") then
-  --  fun = "util.typeAsInPlace"
-  --end
+  if(name=="torch.t") then
+    fun = "torch.t"
+  end
+  if(name=="util.typeAsInPlace") then
+    fun = "util.typeAsInPlace"
+  end
+  if(name=="util.fillInPlace") then
+    fun = "util.fillInPlace"
+  end
   
   return function(...) 
     if doneFuns[name] then

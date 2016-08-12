@@ -145,7 +145,6 @@ function cArgsList:create(Tensor)
       {
         {name=Tensor, default=true, returned=true, method={default='nil'},
           precall=function(self)
-            print("ROSS:in precall")
             local resize2dFun = terralib.externfunction("TH"..TensorShort.."_resize2d"      ,{tType,int32,int32}->{})
             
             local zeroFun = terralib.externfunction("TH"..TensorShort.."_zero",{tType}->{})
@@ -164,11 +163,12 @@ function cArgsList:create(Tensor)
     }
     --torch.t is not yet defined because it is called in support.lua
     --So I just map the function name to the function string
+    
     list["torch.t"] = {
       cname("transpose"),
       {
-        {name=Tensor,returned=true, dim=2},
-        {name=Tensor, default=1,dim=2, defaultGen=function(self) return `nil end},
+        {name=Tensor, default=true, returned=true, dim=2},
+        {name=Tensor, dim=2},
         {name='index', default=1, invisible=true},
         {name='index', default=2, invisible=true}
       }
@@ -195,19 +195,32 @@ function cArgsList:create(Tensor)
       }
     }
     --TODO hacky hardcoding "torch.ByteTensor" as second tensor type
-    local copyFun = terralib.externfunction(cname("copy"..TensorShortShort),{tType,tBType}->{})
-    terra terra_util_typeAsInPlace(tArg1 : tType, tArg2 : tBType, tArg3 : tType) : tType
+      C = terralib.includec("stdio.h")
+    local copyFun = terralib.externfunction(cname("copyByte"),{tType,tBType}->{})
+    terra terra_util_typeAsInPlace(tArg1 : tType, tArg2 : tBType, tArg3 : tType)
+      --C.printf("arg1cnt=%d,arg2cnt=%d\n",tArg1.refcount,tArg2.refcount)
       copyFun(tArg1,tArg2)
-      return tArg1
     end
       
     list["util.typeAsInPlace"] = {
       terra_util_typeAsInPlace,
       {
-        {name=Tensor},
+        {name=Tensor, returned=true},
         {name="torch.ByteTensor"},
+        {name=Tensor}
+      }
+    }
+    local fillFun = terralib.externfunction(cname("fill"),{tType,double}->{})
+    terra terra_util_fillInPlace(tArg1 : tType, tArg2 : tType, tArg3 : double)
+      fillFun(tArg1,tArg3)
+    end
+      
+    list["util.fillInPlace"] = {
+      terra_util_fillInPlace,
+      {
+        {name=Tensor, returned=true},
         {name=Tensor},
-        {name=Tensor,creturned=true}
+        {name=real}
       }
     }
   name = nil
