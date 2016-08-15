@@ -97,7 +97,8 @@ function createFun(op,argTypes)
       break
     end
   end
-  assert(cFun,"ERROR: pattern not found for",op,argTypes)
+  print(op,argTypes)
+  assert(cFun,"ERROR: pattern not found for") 
   print("FOUND",cFun)
   local wrap = tWrap.new(cFun,cArgsListTab,cArgsListMap)
 

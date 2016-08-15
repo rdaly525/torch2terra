@@ -5,11 +5,14 @@ local types = {}
 types.tensorTypes = {}
 types.tensorTypes["torch.DoubleTensor"] = true
 types.tensorTypes["torch.ByteTensor"] = true
+types.tensorTypes["torch.LongTensor"] = true
+types.tensorTypes["torch.LongStorage"] = true
 
 types.torchTypes = {}
 types.torchTypes["torch.DoubleTensor"] = &th.THDoubleTensor
 types.torchTypes["torch.ByteTensor"] = &th.THByteTensor
 types.torchTypes["torch.LongTensor"] = &th.THLongTensor
+types.torchTypes["torch.LongStorage"] = &th.THLongStorage
 types.torchTypes["double"] = double
 types.torchTypes["index"] = int32
 
@@ -85,7 +88,7 @@ function newType(typeStr,funTab)
 end
 
 
-local typeStrs = {"DoubleTensor","LongTensor","ByteTensor"}
+local typeStrs = {"DoubleTensor","LongTensor","ByteTensor","LongStorage"}
 
 for _,t in ipairs(typeStrs) do
   newFunStr = "TH"..t.."_new"

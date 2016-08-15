@@ -14,71 +14,10 @@ require 'terra'
 
 runN = 0
 
-assert(terralib.loadfile("funMap.t"))()
-local doneFuns = {}
 
-doneFuns["util.typeAsInPlace"] = true
-doneFuns["torch.DoubleTensor.expandAs"] = true
-doneFuns["torch.pow"] = true
-doneFuns["torch.t"] = true
-doneFuns["torch.max"] = true
-doneFuns["torch.log"] = true
-doneFuns["torch.exp"] = true
-doneFuns["util.fillInPlace"] = true
-doneFuns["torch.neg"] = true
-doneFuns["torch.sum"] = true
-doneFuns["torch.eq"] = true
-doneFuns["torch.cdiv"] = true
-doneFuns["torch.add"] = true
-doneFuns["torch.mm"] = true
-doneFuns["torch.cmul"] = true
 
-local funMap = {}
+assert(terralib.loadfile("trace.t"))()
 
-function torchWrap(name,fun)
-  if(name=="torch.t") then
-    fun = "torch.t"
-  end
-  if(name=="util.typeAsInPlace") then
-    fun = "util.typeAsInPlace"
-  end
-  if(name=="util.fillInPlace") then
-    fun = "util.fillInPlace"
-  end
-  
-  return function(...) 
-    if doneFuns[name] then
-      --print("DoneFun",name)
-      local args = {...}
-      local argTypes = {}
-      local argTypeStr = ""
-      for i,arg in ipairs(args) do
-        local typeStr = ""
-        if(torch.isTensor(arg)) then
-          typeStr = arg:type()
-        elseif(type(arg)=="number") then
-          typeStr = "number"
-        else 
-          assert(false,"Bad type! arg"..i..": "..torch.type(arg))
-        end
-        table.insert(argTypes,typeStr)
-        argTypeStr = argTypeStr .. typeStr
-      end
-      if funMap[fun] == nil then
-        funMap[fun] = {}
-      end
-      if funMap[fun][argTypeStr] == nil then
-        print("CREATING FUNCTION for ",name,argTypeStr)
-        funMap[fun][argTypeStr] = createFun(fun,argTypes)
-        print("YAY, MADE FUNCTION")
-      end
-      return funMap[fun][argTypeStr](...)
-    else
-      return fun(...)
-    end
-  end
-
-end
 
 
 grad = require 'autograd'

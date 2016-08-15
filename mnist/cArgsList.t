@@ -49,7 +49,8 @@ function cArgsList:create(Tensor)
   local accreal = accreals[TensorShort]
   
   local tType = types.torchTypes[Tensor]
-  local tBType = types.torchTypes["torch.ByteTensor"] 
+  local byteTensorType = types.torchTypes["torch.ByteTensor"] 
+  local longStorageType = types.torchTypes["torch.LongStorage"]
 
   list[torch.add] = {
           cname("add"),
@@ -196,9 +197,8 @@ function cArgsList:create(Tensor)
     }
     --TODO hacky hardcoding "torch.ByteTensor" as second tensor type
       C = terralib.includec("stdio.h")
-    local copyFun = terralib.externfunction(cname("copyByte"),{tType,tBType}->{})
-    terra terra_util_typeAsInPlace(tArg1 : tType, tArg2 : tBType, tArg3 : tType)
-      --C.printf("arg1cnt=%d,arg2cnt=%d\n",tArg1.refcount,tArg2.refcount)
+    local copyFun = terralib.externfunction(cname("copyByte"),{tType,byteTensorType}->{})
+    terra terra_util_typeAsInPlace(tArg1 : tType, tArg2 : byteTensorType, tArg3 : tType)
       copyFun(tArg1,tArg2)
     end
       
@@ -223,6 +223,42 @@ function cArgsList:create(Tensor)
         {name=real}
       }
     }
+    -- Assume that it is contiguous
+
+    local isContig = terralib.externfunction(cname("isContiguous"),{tType}->{int32})
+    local tensorResize2D = terralib.externfunction(cname("resize2d"),{tType,int32,int32}->{})
+    local tensorSet2D = terralib.externfunction(cname("set2d"),{tType,int32,int32,double}->{})
+    local tensorGet2D = terralib.externfunction(cname("get2d"),{tType,int32,int32}->{double})
+    terra terra_torch_repeatTensor(result : tType, tensor : tType, size : longStorageType) : tType
+      var new_size0 = tensor.size[0] * size.data[0]
+      var new_size1 = tensor.size[1] * size.data[1]
+      tensorResize2D(result,new_size0,new_size1) 
+      for i0 = 0,size.data[0] do
+        for i1 = 0,size.data[1] do
+          for d0 = 0,tensor.size[0] do
+            for d1 = 0,tensor.size[1] do
+              var val = tensorGet2D(tensor,d0,d1)
+              tensorSet2D(result,i0*tensor.size[0]+d0,i1*tensor.size[1]+d1,val)
+            end
+          end
+        end
+      end
+      --copy data of tensor into result (using unfold??)
+    end
+    list[torch.repeatTensor] = {
+      terra_torch_repeatTensor,
+      {
+        {name=Tensor, returned=true},
+        {name=Tensor},
+        {name="torch.LongStorage"}
+      }
+    }
+
+
+    --Always takes in 3 things
+
+
+
   name = nil
   cArgsList.list = list
   
