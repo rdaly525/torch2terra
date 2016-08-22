@@ -138,6 +138,11 @@ function cArgsList:create(Tensor)
             {name=real, creturned=true}},
            cname(name),
            {{name=Tensor, default=true, returned=true},
+            {name="torch.LongTensor", default=true, noreadadd=true},
+            {name=Tensor},
+            {name="index"}},
+           cname(name),
+           {{name=Tensor, default=true, returned=true},
             {name="torch.LongTensor", default=true, returned=true, noreadadd=true},
             {name=Tensor},
             {name="index"}} }

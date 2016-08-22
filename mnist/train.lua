@@ -4,21 +4,17 @@ require 'dataset-mnist'
 require 'pl'
 require 'paths'
 
-
-
 --require 'strict'
 
 package.cpath = package.cpath .. ";/home/zdevito/terra/release/lib/?.so"
 
 require 'terra'
 
-runN = 0
-
+useTerra = false
+runN = 200000
 
 
 assert(terralib.loadfile("trace.t"))()
-
-
 
 grad = require 'autograd'
 
@@ -33,13 +29,10 @@ lr = .01
 trainMnist = (runN <2)
 epochs=4
 
-
-
 trainData = mnist.loadTrainSet(trainSize, numClasses)
 trainData:normalizeGlobal(mean, std)
 testData = mnist.loadTestSet(testSize, numClasses)
 testData:normalizeGlobal(mean, std)
-
 
 
 --x: (batchsize x 1024)
@@ -83,15 +76,21 @@ params = {
   }
 }
 
+
 if(runN >0) then
   x = t.reshape(trainData.data[{{1,1+batchSize-1}}],batchSize,xSize)
   yLabels = trainData.labels[{{1,1+batchSize-1}}]:long():view(batchSize,1)
   y = t.zeros(batchSize,numClasses)
   y:scatter(2,yLabels,1)
 
+  t0 = os.time()
   for i=1,runN do
     dparams, loss = dnet(params,x,y)
+    --print("Loss:",loss)
   end
+  tN = os.time()
+  print("Total for "..runN.." is "..(tN-t0) .. " seconds.")
+  print("seconds per grad is "..((tN-t0)/runN))
 end
 
 if(trainMnist) then

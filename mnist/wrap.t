@@ -15,8 +15,12 @@ t = require("torch")
 
 a = t.randn(5)
 
-function unwrapTorchObject(obj)
-   return terralib.cast(&&opaque,obj)[0]
+function unwrapTorchObject(obj,t)
+  if(t) then
+    return terralib.cast(&t,obj)[0]
+  else
+    return terralib.cast(&&opaque,obj)[0]
+  end
 end
 
 b = unwrapTorchObject(a)

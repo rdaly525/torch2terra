@@ -13,6 +13,7 @@ types.torchTypes["torch.DoubleTensor"] = &th.THDoubleTensor
 types.torchTypes["torch.ByteTensor"] = &th.THByteTensor
 types.torchTypes["torch.LongTensor"] = &th.THLongTensor
 types.torchTypes["torch.LongStorage"] = &th.THLongStorage
+types.torchTypes["torch.Number"] = double
 types.torchTypes["double"] = double
 types.torchTypes["index"] = int32
 

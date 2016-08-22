@@ -164,4 +164,30 @@ function tWrap:getReturnCmd()
   
 end
 
+function tWrap:getReturnType()
+  returnTypes = {}
+  if self.cRet then
+    table.insert(returnTypes,self.cRet.name)
+  else
+    for i,retIdx in pairs(self.returnMap) do
+      if self.argMap[retIdx] then --Return value is arg passed in
+        table.insert(returnTypes,self.cArgs[self.argMap[retIdx]].name)
+      else
+        table.insert(returnTypes,self.cArgs[retIdx].name)
+      end
+    end
+  end
+  for i,str in ipairs(returnTypes) do
+    if(str:match("torch")) then
+      returnTypes[i] = str:match("torch.(%S+)")
+    elseif(str=="double") then
+      returnTypes[i] = "Number"
+    else
+      assert(false,"BAD type!! " .. str)
+    end
+  end
+  return returnTypes
+end
+
+
 return tWrap

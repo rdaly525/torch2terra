@@ -7,7 +7,7 @@ local C = terralib.includec("stdio.h")
 
 cArgsList = require 'cArgsList'
 
-function createFun(op,argTypes)
+function createFunObj(op,argTypes)
   
   --Takes in a cArgsList table
   --checks if argTypes is viable for that cArgsList table
@@ -15,11 +15,11 @@ function createFun(op,argTypes)
   --  isFit: true if that table works for argTypes
   --  crwapMap: a map from argTypes idxs to cArgsList table idxs 
   local function checkFit(t)
-    
     local function sameType(argTypeStr,t)
+      --print(argTypeStr,t.name)
       if types.tensorTypes[argTypeStr] then
         return (argTypeStr==t.name)
-      elseif argTypeStr=="number" then
+      elseif argTypeStr=="torch.Number" then
         return (t.name=='index' or t.name=='double')
       else
         return false
@@ -97,38 +97,43 @@ function createFun(op,argTypes)
       break
     end
   end
-  print(op,argTypes)
   assert(cFun,"ERROR: pattern not found for") 
-  print("FOUND",cFun)
+  --print("FOUND cFun",cFun,cArgsListTab)
   local wrap = tWrap.new(cFun,cArgsListTab,cArgsListMap)
 
-  local terraFun = wrap:tWrapFun()
+  local obj = {}
+  obj.fun = wrap:tWrapFun()
+  --obj.returnCmd = wrap:getReturnCmd()
+  obj.returnType = wrap:getReturnType()
+  return obj
+
+  --local terraFun = wrap:tWrapFun()
+  --local returnCmd = wrap:getReturnCmd()
+  --local returnType = wrap:getReturnType()
   
-  local returnCmd = wrap:getReturnCmd()
+  --terraFun:printpretty()
 
-  terraFun:printpretty()
-
-  return function(...)
-    local args = {...}
-    local terraArgs = {}
-    for i,arg in ipairs(args) do
-      if types.tensorTypes[wrap.tArgTypes[i]] then
-        table.insert(terraArgs,unwrapTorchObject(arg))
-      else
-        table.insert(terraArgs,arg)
-      end
-    end
-    local terraRets = table.pack(terralib.unpackstruct(terraFun(table.unpack(terraArgs))))
-    local rets = {}
-    for i,tup in ipairs(returnCmd) do
-      if(tup[1]==1) then
-        table.insert(rets,terraRets[tup[2]])
-      elseif(tup[1]==2) then
-        table.insert(rets,wrapTorchObject(terraRets[tup[2]], tup[3]))
-      elseif(tup[1]==3) then
-        table.insert(rets,args[tup[2]])
-      end
-    end
-    return table.unpack(rets)
-  end
+  --return function(...)
+  --  local args = {...}
+  --  local terraArgs = {}
+  --  for i,arg in ipairs(args) do
+  --    if types.tensorTypes[wrap.tArgTypes[i]] then
+  --      table.insert(terraArgs,unwrapTorchObject(arg))
+  --    else
+  --      table.insert(terraArgs,arg)
+  --    end
+  --  end
+  --  local terraRets = table.pack(terralib.unpackstruct(terraFun(table.unpack(terraArgs))))
+  --  local rets = {}
+  --  for i,tup in ipairs(returnCmd) do
+  --    if(tup[1]==1) then
+  --      table.insert(rets,terraRets[tup[2]])
+  --    elseif(tup[1]==2) then
+  --      table.insert(rets,wrapTorchObject(terraRets[tup[2]], tup[3]))
+  --    elseif(tup[1]==3) then
+  --      table.insert(rets,args[tup[2]])
+  --    end
+  --  end
+  --  return table.unpack(rets)
+  --end
 end
