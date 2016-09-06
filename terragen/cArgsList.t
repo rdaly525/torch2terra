@@ -1,8 +1,6 @@
-local types, _ = assert(terralib.loadfile("types.t"))()
-
+local types = require "terragen.types"
 
 local cArgsList = {}
-
 
 function cArgsList:checkCArgs()
   for op, v in pairs(cArgsList.list) do
@@ -71,6 +69,13 @@ function cArgsList:create(Tensor)
        {{name=Tensor, default=true, returned=true, method={default='nil'}},
         {name=Tensor, method={default=1}}},
        "log",
+       {{name=real},
+        {name=real, creturned=true}}}
+  list[torch.tanh] = {
+       cname("tanh"),
+       {{name=Tensor, default=true, returned=true, method={default='nil'}},
+        {name=Tensor, method={default=1}}},
+       "tanh",
        {{name=real},
         {name=real, creturned=true}}}
   list[torch.cdiv] = {
@@ -228,8 +233,9 @@ function cArgsList:create(Tensor)
         {name=real}
       }
     }
+    
     -- Assume that it is contiguous
-
+    --TODO copy data of tensor into result better (using unfold??)
     local isContig = terralib.externfunction(cname("isContiguous"),{tType}->{int32})
     local tensorResize2D = terralib.externfunction(cname("resize2d"),{tType,int32,int32}->{})
     local tensorSet2D = terralib.externfunction(cname("set2d"),{tType,int32,int32,double}->{})
@@ -248,7 +254,6 @@ function cArgsList:create(Tensor)
           end
         end
       end
-      --copy data of tensor into result (using unfold??)
     end
     list[torch.repeatTensor] = {
       terra_torch_repeatTensor,
@@ -260,19 +265,11 @@ function cArgsList:create(Tensor)
     }
 
 
-    --Always takes in 3 things
-
-
-
   name = nil
   cArgsList.list = list
-  
-  --return cArgsList
 end
 
-local DoubleTensorStr="torch.DoubleTensor"
-
-cArgsList:create(DoubleTensorStr)
+cArgsList:create("torch.DoubleTensor")
 cArgsList:checkCArgs()
 
 return cArgsList

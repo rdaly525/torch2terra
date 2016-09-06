@@ -1,6 +1,6 @@
-local th = terralib.includec("/mnt/raid/torch/install/include/TH/TH.h")
-local types, cArg = assert(terralib.loadfile("types.t"))()
-tWrap = {}
+local types = require "terragen.types"
+local cArg = require "terragen.cArg"
+local tWrap = {}
 
 function tWrap.new(cFun,cArgsListTab,cArgsListMap)
   local self = {cFun=cFun,cArgsTab=cArgsListTab,cArgsMap=cArgsListMap}

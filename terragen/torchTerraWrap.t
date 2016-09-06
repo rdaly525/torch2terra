@@ -7,14 +7,11 @@ terra wrapTorchObjectT(L : &opaque)
     luaT_toudata(L,@cdata,lua_tolstring(L,2,nil))
     return 1
 end
+
+--wrapTorchObject(cData,torchTypeStaring)
 wrapTorchObject = terralib.bindtoluaapi(wrapTorchObjectT:getpointer())
 
--- wrapTorchObject(rawpointerreturnedfromterra,"torch.DoubleTensor")
-
-t = require("torch")
-
-a = t.randn(5)
-
+--unwrapTorchObject(torchObject,torchObjectType)
 function unwrapTorchObject(obj,t)
   if(t) then
     return terralib.cast(&t,obj)[0]
@@ -22,9 +19,3 @@ function unwrapTorchObject(obj,t)
     return terralib.cast(&&opaque,obj)[0]
   end
 end
-
-b = unwrapTorchObject(a)
-
-c = wrapTorchObject(b, "torch.DoubleTensor")
-
-print(a,b,c)
