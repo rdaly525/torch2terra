@@ -1,10 +1,10 @@
-local types = require "terragen.types"
+local types = require "types"
 
-local tWrap = require "terragen.tWrap"
+local tWrap = require "tWrap"
 
 local C = terralib.includec("stdio.h")
 
-local cArgsList = require 'terragen.cArgsList'
+local cArgsList = require 'cArgsList'
 
 function createTerraObj(op,argTypes)
   

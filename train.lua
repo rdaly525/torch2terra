@@ -5,14 +5,13 @@ require 'pl'
 require 'paths'
 
 package.cpath = package.cpath .. ";/home/zdevito/terra/release/lib/?.so"
-require 'terra'
-package.terrapath = package.terrapath .. ";/home/rdaly525/autodiff/terragen"
+assert(require 'terra')
+package.terrapath = package.terrapath .. ";/home/rdaly525/autodiff/src/?.t"
 
-
-require 'terragen.trace'
+require 'trace'
 
 useTerra = true
-runN = 0
+runN = 2
 
 grad = require 'autograd'
 

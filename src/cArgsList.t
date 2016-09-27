@@ -1,4 +1,4 @@
-local types = require "terragen.types"
+local types = require "types"
 
 local cArgsList = {}
 

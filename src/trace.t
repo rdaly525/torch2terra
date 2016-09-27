@@ -1,6 +1,6 @@
-local types = require 'terragen.types'
-require "terragen.torchTerraWrap"
-require "terragen.terraGen"
+local types = require 'types'
+require "torchTerraWrap"
+require "terraGen"
 
 local asdl = require("asdl")
 local List = asdl.List
@@ -156,6 +156,7 @@ function compileTrace(gradFun,rlocalsWrap)
     end
     return typeTable(t,{},"p"..idx)
   end
+
   --gp = grad parameter
   --op = other parameter
   local function createLuaFun(gps,...)  
@@ -166,6 +167,7 @@ function compileTrace(gradFun,rlocalsWrap)
     end
     local gradFunRet = {gradFun(gpExpr,table.unpack(opExprs))}
     
+    --Recursive
     --local function genStruct(t,name)
     --  if t._isExpr then
     --    return t:terraType()
@@ -173,30 +175,63 @@ function compileTrace(gradFun,rlocalsWrap)
     --  assert(t._sorted)
     --  local newStruct = terralib.types.newstruct(name)
     --  for _,k in ipairs(t._sorted) do
+    --    print("Adding "..k.." to " ..tostring(newStruct))
     --    local type = genStruct(t[k],name.."_"..k)
     --    newStruct.entries:insert({field=k,type=type})
     --  end
     --  return newStruct
     --end
-    --local gpStruct = genStruct(gpExpr,"gpStruct")
+    
+    --Flattened ("_<key1>_<key2>_<key3>"
+    local function genStruct(nestedExpr,name)
+      local newStruct = terralib.types.newstruct(name)
+      local function genStructRec(t,name)
+        if t._isExpr then
+          newStruct.entries:insert({field=name,type=t:terraType()})
+          return
+        end
+        assert(t._sorted)
+        for _,k in ipairs(t._sorted) do
+          --print("Adding "..k.." to " ..tostring(newStruct))
+          genStructRec(t[k],name.."_"..k)
+        end
+        return
+      end
+      genStructRec(nestedExpr,"")
+      return newStruct
+    end
 
+    local gpStruct = genStruct(gpExpr,"gpStruct")
+    --print(gpStruct.entries)
+    
     local rlStruct = terralib.types.newstruct("rlStructName")
     for idx,type in pairs(rlStructIdxs) do
       local name = 'rl'..idx
       rlStruct.entries:insert({field=name,type=type})
     end
+    --print(rlStruct.entries)
 
     local symTable = {}
     local rlSymbol = symbol(rlStruct,"rlSym")
+    local gpSymbol = symbol(gpStruct,"gpSym")
     local function getSymbol(expr)
       local name = expr:getSymName()
       if(expr:isclass(c.Constant)) then
         return `[expr.value]
       elseif(expr:isclass(c.Param)) then
-        if not symTable[name] then
-          symTable[name] = symbol(expr:terraType(),name)
+        --TODO Hacky. Maybe split to Param and NestedParam
+        if expr.position==1 then
+          key = ""
+          for _,k in ipairs(expr.path) do
+            key = key .. "_" .. k
+          end
+          return `[gpSymbol].[key]
+        else
+          if not symTable[name] then
+            symTable[name] = symbol(expr:terraType(),name)
+          end
+          return symTable[name]
         end
-        return symTable[name]
       elseif(expr:isclass(c.RLocal)) then
         assert(rlStructIdxs[expr.position],"Did not find rlStruct"..expr.position)
         return `[rlSymbol].[name]
@@ -238,24 +273,19 @@ function compileTrace(gradFun,rlocalsWrap)
     offset = #terraArgSymbols
     
     local gpExprList = {}
-    local function genList(t)
+    local function genGpList(t)
       if t._isExpr then
         table.insert(gpExprList,t)
       else
         assert(t._sorted)
         for _,k in ipairs(t._sorted) do
-          genList(t[k])
+          genGpList(t[k])
         end
       end
     end
-    genList(gpExpr)
+    genGpList(gpExpr)
     
-    --local gpArgSymbol = symbol(gpStruct,"gpStruct"))
-    --table.insert(terraArgSymbols,gpArgSymbol)
-
-    for _,expr in ipairs(gpExprList) do
-      table.insert(terraArgSymbols,symTable[expr:getSymName()])
-    end
+    table.insert(terraArgSymbols,gpSymbol)
 
     for _,expr in ipairs(opExprs) do
       table.insert(terraArgSymbols,symTable[expr:getSymName()])
@@ -289,7 +319,7 @@ function compileTrace(gradFun,rlocalsWrap)
       [terraCodeBody]
       return [retSymbols]
     end
-    --terraFun:printpretty()
+    terraFun:printpretty()
     
     terra constructRlStruct()
       var r : rlStruct
@@ -319,6 +349,25 @@ function compileTrace(gradFun,rlocalsWrap)
       end
     end
 
+    local function fillGpStruct(gp)
+      terra constructGpStruct()
+        var tgp : gpStruct
+        escape
+          for i,expr in ipairs(gpExprList) do
+            local key = ""
+            local p = gp
+            for _,k in ipairs(expr.path) do
+              p = p[k]
+              key = key .. "_" .. k
+            end
+            emit quote tgp.[key] = [unwrapTorchObject(p,expr:terraType())] end
+          end
+        end
+        return tgp
+      end
+      return constructGpStruct()
+    end
+
     return function(gp,...)
       local tArgs = {}
       --rlocal struct
@@ -329,14 +378,16 @@ function compileTrace(gradFun,rlocalsWrap)
         table.insert(tArgs,tArg)
       end
       
-      --Ordered gradient parameters (p1)
-      for _,expr in ipairs(gpExprList) do
-        local p = gp
-        for _,k in ipairs(expr.path) do
-          p = p[k]
-        end
-        table.insert(tArgs,unwrapTorchObject(p))
-      end
+      --Ordered gradient parameters (gp)
+      --for _,expr in ipairs(gpExprList) do
+      --  local p = gp
+      --  for _,k in ipairs(expr.path) do
+      --    p = p[k]
+      --  end
+      --  table.insert(tArgs,unwrapTorchObject(p))
+      --end
+      tArgGp = fillGpStruct(gp)
+      table.insert(tArgs,tArgGp)
       
       --Other parameters
       for _,p in ipairs({...}) do
@@ -374,7 +425,6 @@ function compileTrace(gradFun,rlocalsWrap)
     elseif tType~='table' then
       return tType
     end
-    assert(tType=='table')
     sorted = {}
     for k,_ in pairs(t) do
       table.insert(sorted,k)
@@ -387,7 +437,7 @@ function compileTrace(gradFun,rlocalsWrap)
     return str.."]"
   end
 
-  --Create function only if it has not been cerated before
+  --Create function only if it has not been created before
   return function(gparams,...)
     local pStr = tab2str(gparams)
     for _,p in ipairs({...}) do
@@ -404,7 +454,7 @@ end
 
 function torchWrap(name,fun)
   
-  --TODO Hack because autograd definies the functions later
+  --TODO Hack because autograd defines the functions later
   --Just using string as cache instead of fun
   if(name=="torch.t") then
     fun = "torch.t"

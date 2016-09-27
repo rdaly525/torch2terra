@@ -1,5 +1,5 @@
-local types = require "terragen.types"
-local cArg = require "terragen.cArg"
+local types = require "types"
+local cArg = require "cArg"
 local tWrap = {}
 
 function tWrap.new(cFun,cArgsListTab,cArgsListMap)

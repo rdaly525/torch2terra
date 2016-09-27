@@ -1,4 +1,4 @@
-local types = require "terragen.types"
+local types = require "types"
 local cArg = {types={}}
 
 function cArg.new(i,ti,tab)
