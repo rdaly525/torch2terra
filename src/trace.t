@@ -27,6 +27,8 @@ Expr = Param(number position, string name, any* path)
 --generalize dealing with constants (LongStorage)
 --Better way to deal with nested parameters (integrate with asdl?)
 
+local Cstdio = terralib.includec("stdio.h")
+local Cstdlib = terralib.includec("stdlib.h")
 local rlocalsSave = nil
 local luaFunCache = {}
 local terraFunCache = {}
@@ -72,15 +74,36 @@ c.CallWrap = function(...)
   return obj
 end
 
-c.Expr.__div = function(lhs,rhs)
-  assert(lhs.type==c.Number and type(rhs)=="number","Only supports scalar div")
-  local rhsExpr = c.Constant(rhs,c.Number)
-  local terraDiv = terra(lhs : double, rhs : double)
-    return lhs / rhs
+--Add the basic binary operators
+for _,op in pairs({'add','sub','mul','div'}) do
+  c.Expr["__"..op] = function(lhs,rhs)
+    local lhsExpr,rhsExpr = lhs, rhs
+    if type(lhsExpr)=="number" then
+      lhsExpr = c.Constant(lhsExpr,c.Number)
+    end
+    assert(lhsExpr.type==c.Number,"Error: Only supports scalar operations")
+    
+    if type(rhsExpr)=="number" then
+      rhsExpr = c.Constant(rhsExpr,c.Number)
+    end
+    assert(rhsExpr.type==c.Number,"Error: Only supports scalar operations")
+    local terraOp = terra(lhs : double, rhs : double)
+      escape 
+        if op=='add' then
+          emit quote return lhs + rhs end
+        elseif op=='sub' then
+          emit quote return lhs - rhs end
+        elseif op=='mul' then
+          emit quote return lhs * rhs end
+        elseif op=='div' then
+          emit quote return lhs / rhs end
+        end
+      end
+    end
+    local retExpr = c.CallWrap(terraOp,"terra"..op,List({lhsExpr,rhsExpr}),c.Number)
+    table.insert(callSeq,retExpr)
+    return retExpr
   end
-  local retExpr = c.CallWrap(terraDiv,"terradiv",List({lhs,rhsExpr}),lhs.type)
-  table.insert(callSeq,retExpr)
-  return retExpr
 end
 
 --function createParam(position)
@@ -161,6 +184,7 @@ function compileTrace(gradFun,rlocalsWrap)
   --op = other parameter
   local function createLuaFun(gps,...)  
     local gpExpr = createParam(gps,1)
+    
     local opExprs = {}
     for i,opExpr in ipairs({...}) do
       table.insert(opExprs,createParam(opExpr,i+1))
@@ -183,26 +207,25 @@ function compileTrace(gradFun,rlocalsWrap)
     --end
     
     --Flattened ("_<key1>_<key2>_<key3>"
-    local function genStruct(nestedExpr,name)
-      local newStruct = terralib.types.newstruct(name)
-      local function genStructRec(t,name)
-        if t._isExpr then
-          newStruct.entries:insert({field=name,type=t:terraType()})
-          return
-        end
-        assert(t._sorted)
-        for _,k in ipairs(t._sorted) do
-          --print("Adding "..k.." to " ..tostring(newStruct))
-          genStructRec(t[k],name.."_"..k)
-        end
-        return
-      end
-      genStructRec(nestedExpr,"")
-      return newStruct
-    end
+    --local function genStruct(nestedExpr,name)
+    --  local newStruct = terralib.types.newstruct(name)
+    --  local function genStructRec(t,name)
+    --    if t._isExpr then
+    --      newStruct.entries:insert({field=name,type=t:terraType()})
+    --      return
+    --    end
+    --    assert(t._sorted)
+    --    for _,k in ipairs(t._sorted) do
+    --      --print("Adding "..k.." to " ..tostring(newStruct))
+    --      genStructRec(t[k],name.."_"..k)
+    --    end
+    --    return
+    --  end
+    --  genStructRec(nestedExpr,"")
+    --  return newStruct
+    --end
 
-    local gpStruct = genStruct(gpExpr,"gpStruct")
-    --print(gpStruct.entries)
+    --local gpStruct = genStruct(gpExpr,"gpStruct")
     
     local rlStruct = terralib.types.newstruct("rlStructName")
     for idx,type in pairs(rlStructIdxs) do
@@ -212,26 +235,25 @@ function compileTrace(gradFun,rlocalsWrap)
     --print(rlStruct.entries)
 
     local symTable = {}
-    local rlSymbol = symbol(rlStruct,"rlSym")
-    local gpSymbol = symbol(gpStruct,"gpSym")
+    local rlSymbol = symbol(&rlStruct,"rlSym")
+    --local gpSymbol = symbol(gpStruct,"gpSym")
     local function getSymbol(expr)
       local name = expr:getSymName()
       if(expr:isclass(c.Constant)) then
         return `[expr.value]
       elseif(expr:isclass(c.Param)) then
-        --TODO Hacky. Maybe split to Param and NestedParam
-        if expr.position==1 then
-          key = ""
-          for _,k in ipairs(expr.path) do
-            key = key .. "_" .. k
-          end
-          return `[gpSymbol].[key]
-        else
-          if not symTable[name] then
-            symTable[name] = symbol(expr:terraType(),name)
-          end
-          return symTable[name]
+       -- --TODO Hacky. Maybe split to Param and NestedParam
+       -- if expr.position==1 then
+       --   key = ""
+       --   for _,k in ipairs(expr.path) do
+       --     key = key .. "_" .. k
+       --   end
+       --   return `[gpSymbol].[key]
+       -- else
+        if not symTable[name] then
+          symTable[name] = symbol(expr:terraType(),name)
         end
+        return symTable[name]
       elseif(expr:isclass(c.RLocal)) then
         assert(rlStructIdxs[expr.position],"Did not find rlStruct"..expr.position)
         return `[rlSymbol].[name]
@@ -285,7 +307,11 @@ function compileTrace(gradFun,rlocalsWrap)
     end
     genGpList(gpExpr)
     
-    table.insert(terraArgSymbols,gpSymbol)
+    --table.insert(terraArgSymbols,gpSymbol)
+    
+    for _,expr in ipairs(gpExprList) do
+      table.insert(terraArgSymbols,symTable[expr:getSymName()])
+    end
 
     for _,expr in ipairs(opExprs) do
       table.insert(terraArgSymbols,symTable[expr:getSymName()])
@@ -319,10 +345,11 @@ function compileTrace(gradFun,rlocalsWrap)
       [terraCodeBody]
       return [retSymbols]
     end
-    terraFun:printpretty()
     
+    --terraFun:printpretty()
     terra constructRlStruct()
-      var r : rlStruct
+      --var r : rlStruct
+      var r : &rlStruct = [&rlStruct](Cstdlib.malloc(sizeof(rlStruct)))
       escape
         for i,_ in pairs(rlStructIdxs) do
           local name = 'rl'..i
@@ -332,6 +359,7 @@ function compileTrace(gradFun,rlocalsWrap)
       end
       return r
     end
+
     local tArgRlObj = constructRlStruct()
     local tArgC = {}
     for storage,expr in pairs(constantStorageCache) do
@@ -339,6 +367,19 @@ function compileTrace(gradFun,rlocalsWrap)
     end
     
     --Prep gpRet with correct nested structure
+    local gpRet = {}
+    local function preNest(ref,new)
+      if type(ref)~="table" then
+        return
+      else
+        for k,v in pairs(ref) do
+          new[k] = {}
+          preNest(v,new[k])
+        end
+      end
+    end
+    preNest(gps,gpRet)
+
     local function getRet(tRets,i)    
       if retMap[i].rlocal then
         return rlocalsSave[retMap[i].rlocal]
@@ -349,24 +390,25 @@ function compileTrace(gradFun,rlocalsWrap)
       end
     end
 
-    local function fillGpStruct(gp)
-      terra constructGpStruct()
-        var tgp : gpStruct
-        escape
-          for i,expr in ipairs(gpExprList) do
-            local key = ""
-            local p = gp
-            for _,k in ipairs(expr.path) do
-              p = p[k]
-              key = key .. "_" .. k
-            end
-            emit quote tgp.[key] = [unwrapTorchObject(p,expr:terraType())] end
-          end
-        end
-        return tgp
-      end
-      return constructGpStruct()
-    end
+    --local function fillGpStruct(gp)
+    --  terra constructGpStruct()
+    --    --var tgp : &gpStruct = [&gpStruct](Cstdlib.malloc(sizeof(gpStruct)))
+    --    var tgp : gpStruct 
+    --    escape
+    --      for i,expr in ipairs(gpExprList) do
+    --        local key = ""
+    --        local p = gp
+    --        for _,k in ipairs(expr.path) do
+    --          p = p[k]
+    --          key = key .. "_" .. k
+    --        end
+    --        emit quote tgp.[key] = [unwrapTorchObject(p,expr:terraType())] end
+    --      end
+    --    end
+    --    return tgp
+    --  end
+    --  return constructGpStruct()
+    --end
 
     return function(gp,...)
       local tArgs = {}
@@ -379,15 +421,15 @@ function compileTrace(gradFun,rlocalsWrap)
       end
       
       --Ordered gradient parameters (gp)
-      --for _,expr in ipairs(gpExprList) do
-      --  local p = gp
-      --  for _,k in ipairs(expr.path) do
-      --    p = p[k]
-      --  end
-      --  table.insert(tArgs,unwrapTorchObject(p))
-      --end
-      tArgGp = fillGpStruct(gp)
-      table.insert(tArgs,tArgGp)
+      for _,expr in ipairs(gpExprList) do
+        local p = gp
+        for _,k in ipairs(expr.path) do
+          p = p[k]
+        end
+        table.insert(tArgs,unwrapTorchObject(p))
+      end
+      --tArgGp = fillGpStruct(gp)
+      --table.insert(tArgs,tArgGp)
       
       --Other parameters
       for _,p in ipairs({...}) do
@@ -396,15 +438,12 @@ function compileTrace(gradFun,rlocalsWrap)
       
       --Call the terraFunction
       local tRets = table.pack(terralib.unpackstruct(terraFun(table.unpack(tArgs))))
-      
-      local gpRet = {}
       for i,expr in ipairs(gpExprList) do
         local r = gpRet
         for j,k in ipairs(expr.path) do
           if(j==#expr.path) then
             r[k] = getRet(tRets,i)
           else
-            r[k] = {}
             r = r[k]
           end
         end
@@ -413,6 +452,7 @@ function compileTrace(gradFun,rlocalsWrap)
       for i=#gpExprList+1,#tRets do
         table.insert(oRets,getRet(tRets,i))
       end
+
       return gpRet,table.unpack(oRets)
     end
   end

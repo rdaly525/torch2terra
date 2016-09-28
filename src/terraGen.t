@@ -96,11 +96,11 @@ function createTerraObj(op,argTypes)
     end
   end
   assert(cFun,"ERROR: pattern not found for "..tostring(op)..","..tostring(argTypes)) 
-  --print("Found:",cFun,argTypes) 
   local wrap = tWrap.new(cFun,cArgsListTab,cArgsListMap)
 
   local obj = {}
   obj.fun = wrap:tWrapFun()
+  --obj.fun:printpretty()
   obj.returnType = wrap:getReturnType()
   return obj
 

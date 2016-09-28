@@ -5,19 +5,18 @@ require 'pl'
 require 'paths'
 
 package.cpath = package.cpath .. ";/home/zdevito/terra/release/lib/?.so"
-require 'terra'
-package.terrapath = package.terrapath .. ";/home/rdaly525/autodiff/terragen"
+assert(require 'terra')
+package.terrapath = package.terrapath .. ";/home/rdaly525/autodiff/src/?.t"
 
+require 'trace'
 
-require 'terragen.trace'
-
-useTerra = true
-runN = 2
+useTerra = false
+runN = 0
 
 grad = require 'autograd'
 
-hiddenSizes = {10}
 xSize = 32*32
+hiddenSizes = {12}
 numClasses = 10
 batchSize = 32
 trainSize = 64000
@@ -25,7 +24,7 @@ testSize = 16*100
 lr = .01
 
 trainMnist = (runN <2)
-epochs=4
+epochs=10
 
 trainData = mnist.loadTrainSet(trainSize, numClasses)
 trainData:normalizeGlobal(mean, std)
@@ -52,16 +51,23 @@ params = {
 
 net = function(params, x,y)
   local h1 = x*params.W[1]
-  h1 = h1 + params.b[1]:expandAs(h1)
-  local h2 = t.tanh(h1*params.W[2])
+  h1 = t.tanh(h1 + params.b[1]:expandAs(h1))
+  local h2 = h1*params.W[2]
   h2 = h2 + params.b[2]:expandAs(h2)
 
+  --log softmax
   local max = t.max(h2,2)
   local exp = t.exp(h2-max:expandAs(h2))
   local sum = t.sum(exp,2)
   local yProb = t.cdiv(exp,sum:expandAs(exp))
   
-  local loss = t.sum(-t.log(t.sum(t.cmul(yProb,y),2)))/batchSize
+  --Regularization
+  local reg = 0
+  for i=1,2 do
+    reg = reg+t.sum(t.cmul(params.W[i],params.W[i]))
+  end
+ 
+  local loss = t.sum(-t.log(t.sum(t.cmul(yProb,y),2)))/batchSize + .01*reg
   --print(h1,max,exp,sum,yProb,loss)
   return loss
 end
@@ -70,8 +76,9 @@ end
 netForward = function(params, x)
   local h1 = x*params.W[1]
   h1 = t.tanh(h1 + params.b[1]:expandAs(h1))
-  local h2 = t.tanh(h1*params.W[2])
+  local h2 = h1*params.W[2]
   h2 = h2 + params.b[2]:expandAs(h2)
+  
   local max = t.max(h2,2)
   local exp = t.exp(h2-max:expandAs(h2))
   local sum = t.sum(exp,2)
@@ -93,7 +100,6 @@ if(runN >0) then
   t0 = os.time()
   for i=1,runN do
     dparams, loss = dnet(params,x,y)
-    --print("Loss:",loss)
   end
   tN = os.time()
   print("Total for "..runN.." is "..(tN-t0) .. " seconds.")

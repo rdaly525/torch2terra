@@ -11,7 +11,7 @@ package.terrapath = package.terrapath .. ";/home/rdaly525/autodiff/src/?.t"
 require 'trace'
 
 useTerra = true
-runN = 2
+runN = 0
 
 grad = require 'autograd'
 
@@ -31,19 +31,18 @@ trainData:normalizeGlobal(mean, std)
 testData = mnist.loadTestSet(testSize, numClasses)
 testData:normalizeGlobal(mean, std)
 
-
 --one layer classification using softmax loss
 --x: (batchsize x 1024)
 --y: (batchsize x 10) (1-hot)
 net = function(params, x,y)
   local h1 = x*params.W[1]
   h1 = h1 + params.b[1]:expandAs(h1)
-  
   local max = t.max(h1,2)
   local exp = t.exp(h1-max:expandAs(h1))
   local sum = t.sum(exp,2)
   local yProb = t.cdiv(exp,sum:expandAs(exp))
   
+  --local loss = t.sum(-t.log(t.sum(t.cmul(yProb,y),2)))/batchSize
   local loss = t.sum(-t.log(t.sum(t.cmul(yProb,y),2)))/batchSize
   --print(h1,max,exp,sum,yProb,loss)
   return loss
