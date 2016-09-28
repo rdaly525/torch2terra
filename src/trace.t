@@ -35,6 +35,7 @@ local terraFunCache = {}
 local callSeq = {}
 local constantStorageCache = {}
 
+--Convenience functions
 c.Expr.torchType = function(self)
   return "torch."..tostring(self.type)
 end
@@ -42,10 +43,12 @@ c.Expr.terraType = function(self)
   return types.getType(self:torchType())
 end
 
---TODO this is all hacky
+--TODO this is all hacky. Is there a asdl function that does this?
 c.Expr.isclass = function(self,c)
   return getmetatable(self)==c
 end
+
+
 c.Expr._isExpr =true
 c.Expr.getSymName = function(self)
   return self.name
@@ -54,7 +57,6 @@ end
 c.RLocal.getSymName = function(self) return 'rl'..self.position end
 c.ConstantStorage.getSymName = function(self) return 'cs'..self.idx end
 c.Call.getSymName = function(self) return 'call_'..self.funname..self.idx end
-
 
 c.ConstantStorage.idx = 1
 c.ConstantStorageWrap = function(...)
@@ -106,26 +108,6 @@ for _,op in pairs({'add','sub','mul','div'}) do
   end
 end
 
---function createParam(position)
---  local function createSubParam(position,path)
---    function indexFun(t,k)
---      local newPath = {}
---      for _,v in ipairs(t.path) do
---        table.insert(newPath,v)
---      end
---      table.insert(newPath,k)
---      t[k] = createSubParam(t.position,newPath)
---      return t[k]
---    end
---    local obj = {position=position,path=path,nestedparam=true}
---    setmetatable(obj,{__index=indexFun})
---    return obj
---  end
---  local param = createSubParam(position,{})
---  --local param = createSubParam(position,{})
---  return param
---end
-
 local function str2exprType(str)
   if(str:match("torch")) then
     str = str:match("torch.(%S+)")
@@ -145,7 +127,7 @@ function rlocalsWrap(rlocals)
 end
 
 --Maps names to types
-local rlStructIdxs = {}
+local rlStructTypes = {}
 
 function compileTrace(gradFun,rlocalsWrap)
 
@@ -191,71 +173,26 @@ function compileTrace(gradFun,rlocalsWrap)
     end
     local gradFunRet = {gradFun(gpExpr,table.unpack(opExprs))}
     
-    --Recursive
-    --local function genStruct(t,name)
-    --  if t._isExpr then
-    --    return t:terraType()
-    --  end
-    --  assert(t._sorted)
-    --  local newStruct = terralib.types.newstruct(name)
-    --  for _,k in ipairs(t._sorted) do
-    --    print("Adding "..k.." to " ..tostring(newStruct))
-    --    local type = genStruct(t[k],name.."_"..k)
-    --    newStruct.entries:insert({field=k,type=type})
-    --  end
-    --  return newStruct
-    --end
-    
-    --Flattened ("_<key1>_<key2>_<key3>"
-    --local function genStruct(nestedExpr,name)
-    --  local newStruct = terralib.types.newstruct(name)
-    --  local function genStructRec(t,name)
-    --    if t._isExpr then
-    --      newStruct.entries:insert({field=name,type=t:terraType()})
-    --      return
-    --    end
-    --    assert(t._sorted)
-    --    for _,k in ipairs(t._sorted) do
-    --      --print("Adding "..k.." to " ..tostring(newStruct))
-    --      genStructRec(t[k],name.."_"..k)
-    --    end
-    --    return
-    --  end
-    --  genStructRec(nestedExpr,"")
-    --  return newStruct
-    --end
-
-    --local gpStruct = genStruct(gpExpr,"gpStruct")
-    
+    --Create struct holding all rlocals
     local rlStruct = terralib.types.newstruct("rlStructName")
-    for idx,type in pairs(rlStructIdxs) do
+    for idx,type in pairs(rlStructTypes) do
       local name = 'rl'..idx
       rlStruct.entries:insert({field=name,type=type})
     end
-    --print(rlStruct.entries)
 
     local symTable = {}
     local rlSymbol = symbol(&rlStruct,"rlSym")
-    --local gpSymbol = symbol(gpStruct,"gpSym")
     local function getSymbol(expr)
       local name = expr:getSymName()
       if(expr:isclass(c.Constant)) then
         return `[expr.value]
       elseif(expr:isclass(c.Param)) then
-       -- --TODO Hacky. Maybe split to Param and NestedParam
-       -- if expr.position==1 then
-       --   key = ""
-       --   for _,k in ipairs(expr.path) do
-       --     key = key .. "_" .. k
-       --   end
-       --   return `[gpSymbol].[key]
-       -- else
         if not symTable[name] then
           symTable[name] = symbol(expr:terraType(),name)
         end
         return symTable[name]
       elseif(expr:isclass(c.RLocal)) then
-        assert(rlStructIdxs[expr.position],"Did not find rlStruct"..expr.position)
+        assert(rlStructTypes[expr.position],"Did not find rlStruct"..expr.position)
         return `[rlSymbol].[name]
       elseif(expr:isclass(c.ConstantStorage)) then
         if not symTable[name] then
@@ -271,20 +208,20 @@ function compileTrace(gradFun,rlocalsWrap)
     --Loop through all the function calls to generate terra code
     local terraCodeBody = {}
     for i,callExpr in ipairs(callSeq) do
-      local name = callExpr:getSymName()
       local callArgs = {}
       for i,argExpr in ipairs(callExpr.args) do
         local sym = getSymbol(argExpr)
         assert(sym)
         table.insert(callArgs,sym)
       end
+      local name = callExpr:getSymName()
       assert(not symTable[name],"Found name when should not have")
       symTable[name] = symbol(callExpr:terraType(),name)
       table.insert(terraCodeBody,quote var [symTable[name]] = [callExpr.terrafun]([callArgs]) end)
     end
     
     --create Terra arg list
-    --Terra arg list ordering (rlocal, constants..., gradient param struct, other params)
+    --Terra arg list ordering (rlocal, constants..., ordered gradient params, other params)
     --gpStruct
     local offset = 1
     local terraArgSymbols = {rlSymbol}
@@ -294,6 +231,7 @@ function compileTrace(gradFun,rlocalsWrap)
     end
     offset = #terraArgSymbols
     
+    --Create ordered flattened gpExpr list
     local gpExprList = {}
     local function genGpList(t)
       if t._isExpr then
@@ -306,8 +244,6 @@ function compileTrace(gradFun,rlocalsWrap)
       end
     end
     genGpList(gpExpr)
-    
-    --table.insert(terraArgSymbols,gpSymbol)
     
     for _,expr in ipairs(gpExprList) do
       table.insert(terraArgSymbols,symTable[expr:getSymName()])
@@ -341,17 +277,17 @@ function compileTrace(gradFun,rlocalsWrap)
       table.insert(retMap,getRetMap(rExpr))
     end
     
+    --Create the actual terra function
     local terraFun = terra([terraArgSymbols])
       [terraCodeBody]
       return [retSymbols]
     end
     
-    --terraFun:printpretty()
+    -- Connstruct and load the rlocals struct
     terra constructRlStruct()
-      --var r : rlStruct
       var r : &rlStruct = [&rlStruct](Cstdlib.malloc(sizeof(rlStruct)))
       escape
-        for i,_ in pairs(rlStructIdxs) do
+        for i,_ in pairs(rlStructTypes) do
           local name = 'rl'..i
           local rType = types.getType(tostring(torch.type(rlocalsSave[i])))
           emit quote r.[name] = [unwrapTorchObject(rlocalsSave[i],rType)] end
@@ -359,8 +295,9 @@ function compileTrace(gradFun,rlocalsWrap)
       end
       return r
     end
-
     local tArgRlObj = constructRlStruct()
+    
+    --Load the constants
     local tArgC = {}
     for storage,expr in pairs(constantStorageCache) do
       tArgC[expr.idx] = unwrapTorchObject(storage)
@@ -390,26 +327,8 @@ function compileTrace(gradFun,rlocalsWrap)
       end
     end
 
-    --local function fillGpStruct(gp)
-    --  terra constructGpStruct()
-    --    --var tgp : &gpStruct = [&gpStruct](Cstdlib.malloc(sizeof(gpStruct)))
-    --    var tgp : gpStruct 
-    --    escape
-    --      for i,expr in ipairs(gpExprList) do
-    --        local key = ""
-    --        local p = gp
-    --        for _,k in ipairs(expr.path) do
-    --          p = p[k]
-    --          key = key .. "_" .. k
-    --        end
-    --        emit quote tgp.[key] = [unwrapTorchObject(p,expr:terraType())] end
-    --      end
-    --    end
-    --    return tgp
-    --  end
-    --  return constructGpStruct()
-    --end
-
+    --Final lua function which parses and passes the args into the terra function
+    -- This should be simple as it is on the critical path
     return function(gp,...)
       local tArgs = {}
       --rlocal struct
@@ -428,8 +347,6 @@ function compileTrace(gradFun,rlocalsWrap)
         end
         table.insert(tArgs,unwrapTorchObject(p))
       end
-      --tArgGp = fillGpStruct(gp)
-      --table.insert(tArgs,tArgGp)
       
       --Other parameters
       for _,p in ipairs({...}) do
@@ -438,6 +355,8 @@ function compileTrace(gradFun,rlocalsWrap)
       
       --Call the terraFunction
       local tRets = table.pack(terralib.unpackstruct(terraFun(table.unpack(tArgs))))
+      
+      --unpack the terra reteurns into the correct format
       for i,expr in ipairs(gpExprList) do
         local r = gpRet
         for j,k in ipairs(expr.path) do
@@ -455,7 +374,7 @@ function compileTrace(gradFun,rlocalsWrap)
 
       return gpRet,table.unpack(oRets)
     end
-  end
+  end --End createLuaFun
   
   --Flatten a table to a string of types
   local function tab2str(t)
@@ -490,11 +409,9 @@ function compileTrace(gradFun,rlocalsWrap)
   end
 end
 
-
-
 function torchWrap(name,fun)
   
-  --TODO Hack because autograd defines the functions later
+  --TODO Hack because autograd defines the functions after this code is generated
   --Just using string as cache instead of fun
   if(name=="torch.t") then
     fun = "torch.t"
@@ -507,7 +424,7 @@ function torchWrap(name,fun)
   return function(...) 
     local args = {...}
     local argTypes = {}
-    argExps = {}
+    local argExps = {}
     for i,arg in ipairs(args) do
       if(type(arg)=="number") then
         arg = c.Constant(arg,c.Number)
@@ -517,7 +434,7 @@ function torchWrap(name,fun)
         end
         arg = constantStorageCache[arg]
       elseif(arg:isclass(c.RLocal)) then
-        rlStructIdxs[arg.position] = arg:terraType()
+        rlStructTypes[arg.position] = arg:terraType()
       end 
       table.insert(argExps,arg)
       table.insert(argTypes,"torch."..tostring(arg.type))
@@ -527,7 +444,7 @@ function torchWrap(name,fun)
       terraFunCache[fun] = {}
     end
     if terraFunCache[fun][argTypeStr] == nil then
-      terraFunCache[fun][argTypeStr] = createTerraObj(fun,argTypes)
+      terraFunCache[fun][argTypeStr] = createTerraObj(fun,argTypes,name)
     end
     local funObj = terraFunCache[fun][argTypeStr]
     local retExpr = c.CallWrap(funObj.fun, name,List(argExps),c[funObj.returnType[1]])

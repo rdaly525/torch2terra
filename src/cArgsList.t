@@ -2,6 +2,8 @@ local types = require "types"
 
 local cArgsList = {}
 
+
+-- A couple checks
 function cArgsList:checkCArgs()
   for op, v in pairs(cArgsList.list) do
     assert(#v % 2 == 0)
@@ -10,9 +12,6 @@ function cArgsList:checkCArgs()
     end
     --TODO
     --Verify that creturned is always the last arg if it is there
-    --for i=1,#v/2 do
-    --  for ci,t in ipairs
-    --end
   end
 end
 
@@ -205,7 +204,6 @@ function cArgsList:create(Tensor)
         {name=Tensor,creturned=true}
       }
     }
-    --TODO hacky hardcoding "torch.ByteTensor" as second tensor type
       C = terralib.includec("stdio.h")
     local copyFun = terralib.externfunction(cname("copyByte"),{tType,byteTensorType}->{})
     terra terra_util_typeAsInPlace(tArg1 : tType, tArg2 : byteTensorType, tArg3 : tType)

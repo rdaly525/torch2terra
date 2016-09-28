@@ -11,12 +11,12 @@ package.terrapath = package.terrapath .. ";/home/rdaly525/autodiff/src/?.t"
 require 'trace'
 
 useTerra = true
-runN = 0
+runN = 0000
 
 grad = require 'autograd'
 
-geometry = {32,32}
 xSize = 32*32
+hiddenSizes = {24}
 numClasses = 10
 batchSize = 32
 trainSize = 64000
@@ -24,26 +24,50 @@ testSize = 16*100
 lr = .01
 
 trainMnist = (runN <2)
-epochs=4
+epochs=10
 
 trainData = mnist.loadTrainSet(trainSize, numClasses)
 trainData:normalizeGlobal(mean, std)
 testData = mnist.loadTestSet(testSize, numClasses)
 testData:normalizeGlobal(mean, std)
 
+
 --one layer classification using softmax loss
 --x: (batchsize x 1024)
 --y: (batchsize x 10) (1-hot)
+
+
+--initialize parameters
+params = {
+  W = {
+    t.randn(xSize,hiddenSizes[1])-0.5,
+    t.randn(hiddenSizes[1],numClasses)-0.5
+  },
+  b = {
+    t.zeros(1,hiddenSizes[1]),
+    t.zeros(1,numClasses)
+  }
+}
+
 net = function(params, x,y)
   local h1 = x*params.W[1]
-  h1 = h1 + params.b[1]:expandAs(h1)
-  local max = t.max(h1,2)
-  local exp = t.exp(h1-max:expandAs(h1))
+  h1 = t.tanh(h1 + params.b[1]:expandAs(h1))
+  local h2 = h1*params.W[2]
+  h2 = h2 + params.b[2]:expandAs(h2)
+
+  --log softmax
+  local max = t.max(h2,2)
+  local exp = t.exp(h2-max:expandAs(h2))
   local sum = t.sum(exp,2)
   local yProb = t.cdiv(exp,sum:expandAs(exp))
   
-  --local loss = t.sum(-t.log(t.sum(t.cmul(yProb,y),2)))/batchSize
-  local loss = t.sum(-t.log(t.sum(t.cmul(yProb,y),2)))/batchSize
+  --Regularization
+  local reg = 0
+  for i=1,2 do
+    reg = reg+t.sum(t.cmul(params.W[i],params.W[i]))
+  end
+ 
+  local loss = t.sum(-t.log(t.sum(t.cmul(yProb,y),2)))/batchSize + .01*reg
   --print(h1,max,exp,sum,yProb,loss)
   return loss
 end
@@ -51,10 +75,12 @@ end
 
 netForward = function(params, x)
   local h1 = x*params.W[1]
-  h1 = h1 + params.b[1]:expandAs(h1)
+  h1 = t.tanh(h1 + params.b[1]:expandAs(h1))
+  local h2 = h1*params.W[2]
+  h2 = h2 + params.b[2]:expandAs(h2)
   
-  local max = t.max(h1,2)
-  local exp = t.exp(h1-max:expandAs(h1))
+  local max = t.max(h2,2)
+  local exp = t.exp(h2-max:expandAs(h2))
   local sum = t.sum(exp,2)
   local yProb = t.cdiv(exp,sum:expandAs(exp))
   
@@ -63,15 +89,6 @@ end
 
 dnet = grad(net,{optimize=true})
 
---initialize parameters
-params = {
-  W = {
-    t.randn(xSize,numClasses)-0.5
-  },
-  b = {
-    t.zeros(1,numClasses)
-  }
-}
 
 
 if(runN >0) then
@@ -83,7 +100,6 @@ if(runN >0) then
   t0 = os.time()
   for i=1,runN do
     dparams, loss = dnet(params,x,y)
-    --print("Loss:",loss)
   end
   tN = os.time()
   print("Total for "..runN.." is "..(tN-t0) .. " seconds.")
@@ -101,6 +117,8 @@ if(trainMnist) then
       dparams, loss = dnet(params,x,y)
       params.W[1]:add(-lr,dparams.W[1])
       params.b[1]:add(-lr,dparams.b[1])
+      params.W[2]:add(-lr,dparams.W[2])
+      params.b[2]:add(-lr,dparams.b[2])
       if((tr-1)%(batchSize*50)==0) then
         print(e,tr-1,loss)
       end

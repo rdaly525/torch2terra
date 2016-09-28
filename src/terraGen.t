@@ -6,7 +6,7 @@ local C = terralib.includec("stdio.h")
 
 local cArgsList = require 'cArgsList'
 
-function createTerraObj(op,argTypes)
+function createTerraObj(op,argTypes,name)
   
   --Takes in a cArgsList table
   --checks if argTypes is viable for that cArgsList table
@@ -84,6 +84,7 @@ function createTerraObj(op,argTypes)
   end
 
   local cArgsListOp = cArgsList.list[op]
+  assert(cArgsListOp,"Error: "..tostring(name).." not implemented yet\n")
   local cFun, cArgsListMap, cArgsListTab = nil,nil,nil
   for i = 1,#cArgsListOp/2 do
     cArgsListTab = cArgsListOp[2*i]
